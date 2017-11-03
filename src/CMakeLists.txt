@@ -8,6 +8,7 @@
 cmake_minimum_required (VERSION 3.1)
 set(name "YOLO")
 set(exename "yolo_exe")
+set(exename_lib "yolo_lib_exe")
 set(libname "yolo_lib")
 project ( ${name} )
 
@@ -159,8 +160,6 @@ set(MY_SOURCE_FILES
     voxel.c
     writing.c
     yolo.c
-    yolo_v2_class.cpp
-    yolo_v2_class.hpp
 )
 
 include_directories(
@@ -178,6 +177,11 @@ cuda_add_executable(${exename}
     yolo_console_dll.cpp
 )
 
+cuda_add_executable(${exename_lib}
+    YOLODetector.hpp
+    main.cpp
+)
+
 add_definitions(-DYOLODLL_EXPORTS)
 add_definitions(-DGPU)
 
@@ -185,6 +189,9 @@ cuda_add_library(${libname} SHARED
     ${MY_CUDA_FILES}
     ${MY_HEADER_FILES}
     ${MY_SOURCE_FILES}
+    yolo_v2_class.cpp
+    yolo_v2_class.hpp
+    YOLODetector.hpp
     OPTIONS -arch sm_61
 )
 
@@ -198,12 +205,23 @@ target_link_libraries(${exename}
 	${CUDA_nppc_LIBRARY}
 )
 
-target_link_libraries(${libname} 
+target_link_libraries(${exename_lib} 
     ${OpenCV_LIBS}
     ${YOLO_LIBS} 
 	${CUDA_LIBRARIES}
 	${CUDA_CUBLAS_LIBRARIES}
 	${CUDA_curand_LIBRARY}
 	${CUDA_npp_LIBRARY}
-	${CUDA_nppc_LIBRARY}
+    ${CUDA_nppc_LIBRARY}
+    E:/Project/darknet/src/build/Release/yolo_lib.lib
+)
+
+target_link_libraries(${libname} 
+    ${OpenCV_LIBS}
+    ${YOLO_LIBS} 
+    ${CUDA_LIBRARIES}
+    ${CUDA_CUBLAS_LIBRARIES}
+    ${CUDA_curand_LIBRARY}
+    ${CUDA_npp_LIBRARY}
+    ${CUDA_nppc_LIBRARY}
 )
