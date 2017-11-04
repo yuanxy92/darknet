@@ -174,6 +174,8 @@ cuda_add_executable(${exename}
     ${MY_CUDA_FILES}
 	${MY_HEADER_FILES}
     ${MY_SOURCE_FILES}
+	yolo_v2_class.hpp
+	yolo_v2_class.cpp
     yolo_console_dll.cpp
 )
 
@@ -182,16 +184,20 @@ cuda_add_executable(${exename_lib}
     main.cpp
 )
 
+add_definitions(-DYOLO_DETECTOR_EXPORTS)
 add_definitions(-DYOLODLL_EXPORTS)
 add_definitions(-DGPU)
+add_definitions(-DCUDNN)
+if(NOT CMAKE_DEBUG_POSTFIX)
+  set(CMAKE_DEBUG_POSTFIX d)
+endif()
 
 cuda_add_library(${libname} SHARED
     ${MY_CUDA_FILES}
     ${MY_HEADER_FILES}
     ${MY_SOURCE_FILES}
-    yolo_v2_class.cpp
-    yolo_v2_class.hpp
     YOLODetector.hpp
+	YOLODetector.cpp
     OPTIONS -arch sm_61
 )
 
@@ -213,7 +219,8 @@ target_link_libraries(${exename_lib}
 	${CUDA_curand_LIBRARY}
 	${CUDA_npp_LIBRARY}
     ${CUDA_nppc_LIBRARY}
-    E:/Project/darknet/src/build/Release/yolo_lib.lib
+    debug E:/Project/darknet/src/build/Debug/yolo_libd.lib
+	optimized E:/Project/darknet/src/build/Release/yolo_lib.lib
 )
 
 target_link_libraries(${libname} 
