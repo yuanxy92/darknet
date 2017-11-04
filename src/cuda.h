@@ -16,7 +16,7 @@ extern int gpu_index;
 #include "cublas_v2.h"
 #include <device_launch_parameters.h>
 
-#define CUDA_PROFILE
+//#define CUDA_PROFILE
 
 #ifdef CUDNN
 #include "cudnn.h"
