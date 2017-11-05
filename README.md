@@ -1,8 +1,10 @@
 # Yolo-v2 Windows and Linux version
 
-## YOLO with CMake and GPU implements
+## YOLO with CMake and GPU interfaces
 I write this repository based on https://github.com/AlexeyAB/darknet
 Thanks AlexeyAB
+
+CMakeLists.txt is in src/
 
 ## Tutorial
 [![CircleCI](https://circleci.com/gh/AlexeyAB/darknet.svg?style=svg)](https://circleci.com/gh/AlexeyAB/darknet)
