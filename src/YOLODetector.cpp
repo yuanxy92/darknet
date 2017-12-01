@@ -53,6 +53,12 @@ YOLO_DETECTOR_API YOLODetector::~YOLODetector() {
 	free(detector->boxes);
 	free(detector->probs);
 	cudaFree(this->input);
+
+	int old_gpu_index;
+	cudaGetDevice(&old_gpu_index);
+	cudaSetDevice(detector->net.gpu_index);
+	free_network(detector->net);
+	cudaSetDevice(old_gpu_index);
 }
 
 /**
