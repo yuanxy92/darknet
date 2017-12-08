@@ -51,6 +51,7 @@ struct bbox_t {
 class YOLODetector {
 private:
 	std::shared_ptr<void> detector_ptr;
+	bool isInit;
 public:
 	float *input;
 	float nms;

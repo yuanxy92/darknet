@@ -40,25 +40,27 @@ struct YOLO_detector_ptr{
 /*                                  YOLODetector class                            */
 /**********************************************************************************/
 
-YOLO_DETECTOR_API YOLODetector::YOLODetector(): nms(0.4), thresh(0.2) {}
+YOLO_DETECTOR_API YOLODetector::YOLODetector(): nms(0.4), thresh(0.2), isInit(false) {}
 YOLO_DETECTOR_API YOLODetector::~YOLODetector() {
-	std::shared_ptr<YOLO_detector_ptr> detector = std::static_pointer_cast<YOLO_detector_ptr>
-		(detector_ptr);
-	layer l = detector->net.layers[detector->net.n - 1];
-	free(detector->track_id);
-	free(detector->avg);
-	free(detector->predictions);
-	for (int j = 0; j < l.w*l.h*l.n; ++j)
-		free(detector->probs[j]);
-	free(detector->boxes);
-	free(detector->probs);
-	cudaFree(this->input);
+	if (isInit) {
+		std::shared_ptr<YOLO_detector_ptr> detector = std::static_pointer_cast<YOLO_detector_ptr>
+			(detector_ptr);
+		layer l = detector->net.layers[detector->net.n - 1];
+		free(detector->track_id);
+		free(detector->avg);
+		free(detector->predictions);
+		for (int j = 0; j < l.w*l.h*l.n; ++j)
+			free(detector->probs[j]);
+		free(detector->boxes);
+		free(detector->probs);
+		cudaFree(this->input);
 
-	int old_gpu_index;
-	cudaGetDevice(&old_gpu_index);
-	cudaSetDevice(detector->net.gpu_index);
-	free_network(detector->net);
-	cudaSetDevice(old_gpu_index);
+		int old_gpu_index;
+		cudaGetDevice(&old_gpu_index);
+		cudaSetDevice(detector->net.gpu_index);
+		free_network(detector->net);
+		cudaSetDevice(old_gpu_index);
+	}
 }
 
 /**
@@ -178,6 +180,7 @@ YOLO_DETECTOR_API int YOLODetector::init(std::string cfgfile, std::string weight
 		std::cout << "YOLO detector init failed! Can not malloc gpu memory!" << std::endl;
 		return -1;
 	}
+	isInit = true;
 	// load obj name
 	return 0;
 }
