@@ -88,6 +88,8 @@ YOLO_DETECTOR_API cv::Mat YOLODetector::draw_boxes(cv::Mat mat_img,
 	cv::Mat visualImg = mat_img.clone();
 	int const colors[6][3] = { { 1,0,1 },{ 0,0,1 },{ 0,1,1 },{ 0,1,0 },{ 1,1,0 },{ 1,0,0 } };
 	for (auto &i : result_vec) {
+		if (i.prob < 0.25)
+			break;
 		int const offset = i.obj_id * 123457 % 6;
 		int const color_scale = 150 + (i.obj_id * 123457) % 100;
 		cv::Scalar color(colors[offset][0], colors[offset][1], colors[offset][2]);
