@@ -1,5 +1,10 @@
 # Yolo-v2 Windows and Linux version
 
+## Download
+Pre-compiled windows libs: (Windows 10 + VS2015 + CUDA8)
+
+link: https://pan.baidu.com/s/1o7DHkam passwd: 2mfi
+
 ## YOLO with CMake and GPU interfaces
 I write this repository based on https://github.com/AlexeyAB/darknet
 Thanks AlexeyAB
