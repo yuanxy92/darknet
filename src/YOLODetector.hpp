@@ -74,6 +74,12 @@ public:
 		int deviceId = 0);
 
 	/**
+	@brief release function
+	@return int
+	*/
+	YOLO_DETECTOR_API int release();
+
+	/**
 	@brief apply detector
 	@param float* img_d: input image whose size equals the neural work
 	input tensor size (float type on GPU)

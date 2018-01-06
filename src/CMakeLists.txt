@@ -219,8 +219,8 @@ target_link_libraries(${exename_lib}
 	${CUDA_curand_LIBRARY}
 	${CUDA_npp_LIBRARY}
     ${CUDA_nppc_LIBRARY}
-    debug E:/Project/darknet/src/build/Debug/yolo_libd.lib
-	optimized E:/Project/darknet/src/build/Release/yolo_lib.lib
+    debug E:/Project/YOLO/build/Debug/yolo_libd.lib
+	optimized E:/Project/YOLO/build/Release/yolo_lib.lib
 )
 
 target_link_libraries(${libname} 

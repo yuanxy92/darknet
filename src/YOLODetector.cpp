@@ -41,7 +41,13 @@ struct YOLO_detector_ptr{
 /**********************************************************************************/
 
 YOLO_DETECTOR_API YOLODetector::YOLODetector(): nms(0.4), thresh(0.2), isInit(false) {}
-YOLO_DETECTOR_API YOLODetector::~YOLODetector() {
+YOLO_DETECTOR_API YOLODetector::~YOLODetector() {}
+
+/**
+@brief release function
+@return int
+*/
+YOLO_DETECTOR_API int YOLODetector::release() {
 	if (isInit) {
 		std::shared_ptr<YOLO_detector_ptr> detector = std::static_pointer_cast<YOLO_detector_ptr>
 			(detector_ptr);
@@ -61,6 +67,7 @@ YOLO_DETECTOR_API YOLODetector::~YOLODetector() {
 		free_network(detector->net);
 		cudaSetDevice(old_gpu_index);
 	}
+	return 0;
 }
 
 /**
