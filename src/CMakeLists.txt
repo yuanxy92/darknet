@@ -15,6 +15,14 @@ project ( ${name} )
 #c++ version
 set (CMAKE_CXX_STANDARD 11)
 
+#cuda
+find_package(CUDA)
+set(CUDA_NVCC_FLAGS
+    ${CUDA_NVCC_FLAGS}
+#    -O3 
+	-gencode=arch=compute_61,code=\"sm_61,compute_61\"
+    )
+	
 #opencv 
 if ( WIN32 )
 	set(OpenCV_DIR "E:/libs/OpenCV/x64/vc14/lib")
@@ -26,14 +34,6 @@ endif()
 # OpenCV
 find_package(OpenCV REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
-
-#cuda
-find_package(CUDA)
-set(CUDA_NVCC_FLAGS
-    ${CUDA_NVCC_FLAGS}
-#    -O3 
-	-gencode=arch=compute_61,code=\"sm_61,compute_61\"
-    )
 
 set(MY_HEADER_FILES
 	# C++ header file
@@ -207,8 +207,6 @@ target_link_libraries(${exename}
 	${CUDA_LIBRARIES}
 	${CUDA_CUBLAS_LIBRARIES}
 	${CUDA_curand_LIBRARY}
-	${CUDA_npp_LIBRARY}
-	${CUDA_nppc_LIBRARY}
 )
 
 target_link_libraries(${exename_lib} 
@@ -217,8 +215,6 @@ target_link_libraries(${exename_lib}
 	${CUDA_LIBRARIES}
 	${CUDA_CUBLAS_LIBRARIES}
 	${CUDA_curand_LIBRARY}
-	${CUDA_npp_LIBRARY}
-    ${CUDA_nppc_LIBRARY}
     debug E:/Project/YOLO/build/Debug/yolo_libd.lib
 	optimized E:/Project/YOLO/build/Release/yolo_lib.lib
 )
@@ -229,6 +225,4 @@ target_link_libraries(${libname}
     ${CUDA_LIBRARIES}
     ${CUDA_CUBLAS_LIBRARIES}
     ${CUDA_curand_LIBRARY}
-    ${CUDA_npp_LIBRARY}
-    ${CUDA_nppc_LIBRARY}
 )
