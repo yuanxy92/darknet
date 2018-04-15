@@ -1,6 +1,3 @@
-#include <iostream>
-#include <chrono>
-
 #include "cuda_runtime.h"
 #include "curand.h"
 #include "cublas_v2.h"
@@ -39,6 +36,10 @@ extern "C" {
 #include "blas.h"
 }
 
+#ifdef OPENCV
+#include "opencv2/highgui/highgui_c.h"
+#endif
+
 float * get_network_output_gpu_layer(network net, int i);
 float * get_network_delta_gpu_layer(network net, int i);
 float * get_network_output_gpu(network net);
@@ -54,7 +55,24 @@ void forward_network_gpu(network net, network_state state)
             fill_ongpu(l.outputs * l.batch, 0, l.delta_gpu, 1);
         }
         l.forward_gpu(l, state);
+		if(net.wait_stream)
+			cudaStreamSynchronize(get_cuda_stream());
         state.input = l.output_gpu;
+/*
+		cuda_pull_array(l.output_gpu, l.output, l.batch*l.outputs);
+		if (l.out_w >= 0 && l.out_h >= 1 && l.c >= 3) {
+			int j;
+			for (j = 0; j < l.out_c; ++j) {
+				image img = make_image(l.out_w, l.out_h, 3);
+				memcpy(img.data, l.output+ l.out_w*l.out_h*j, l.out_w*l.out_h * 1 * sizeof(float));
+				char buff[256];
+				sprintf(buff, "layer-%d slice-%d", i, j);
+				show_image(img, buff);
+			}
+			cvWaitKey(0); // wait press-key in console
+			cvDestroyAllWindows();
+		}
+*/
     }
 }
 
@@ -67,6 +85,7 @@ void backward_network_gpu(network net, network_state state)
     for(i = net.n-1; i >= 0; --i){
         state.index = i;
         layer l = net.layers[i];
+        if (l.stopbackward) break;
         if(i == 0){
             state.input = original_input;
             state.delta = original_delta;
@@ -113,7 +132,15 @@ void forward_backward_network_gpu(network net, float *x, float *y)
     state.delta = 0;
     state.truth = *net.truth_gpu;
     state.train = 1;
+#ifdef CUDNN_HALF
+	int i;
+	for (i = 0; i < net.n; ++i) {
+		layer l = net.layers[i];
+		cuda_convert_f32_to_f16(l.weights_gpu, l.c*l.n*l.size*l.size, l.weights_gpu16);
+	}
+#endif
     forward_network_gpu(net, state);
+	//cudaStreamSynchronize(get_cuda_stream());
     backward_network_gpu(net, state);
 }
 
@@ -394,7 +421,8 @@ float *get_network_output_gpu(network net)
 
 float *network_predict_gpu(network net, float *input)
 {
-    cuda_set_device(net.gpu_index);
+	if (net.gpu_index != cuda_get_device())
+		cuda_set_device(net.gpu_index);
     int size = get_network_input_size(net) * net.batch;
     network_state state;
     state.index = 0;
@@ -403,18 +431,12 @@ float *network_predict_gpu(network net, float *input)
     state.truth = 0;
     state.train = 0;
     state.delta = 0;
-
-	//auto start = std::chrono::system_clock::now();
     forward_network_gpu(net, state);
-	//auto end = std::chrono::system_clock::now();
-	//auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-	//std::cout << "Darknet forward cost: " << elapsed.count() << "ms." << std::endl;
-
     float *out = get_network_output_gpu(net);
     cuda_free(state.input);
     return out;
 }
-
+//#define CUDA_PROFILE
 float *network_predict_gpu_cuda_pointer(network net, float *input) {
 	cuda_set_device(net.gpu_index);
 	int size = get_network_input_size(net) * net.batch;
@@ -426,22 +448,22 @@ float *network_predict_gpu_cuda_pointer(network net, float *input) {
 	state.train = 0;
 	state.delta = 0;
 
-#ifdef CUDA_PROFILE
+#ifdef CUDA_PROFILE 
 	cudaEvent_t start, stop;
 	float elapsedTime;
 	cudaEventCreate(&start);
 	cudaEventRecord(start, 0);
-#endif
+#endif 
 
 	forward_network_gpu(net, state);
 
-#ifdef CUDA_PROFILE
+#ifdef CUDA_PROFILE 
 	cudaEventCreate(&stop);
 	cudaEventRecord(stop, 0);
 	cudaEventSynchronize(stop);
 	cudaEventElapsedTime(&elapsedTime, start, stop);
 	printf("Inner forward GPU: (file:%s, line:%d) elapsed time : %f ms\n", __FILE__, __LINE__, elapsedTime);
-#endif
+#endif 
 
 	float *out = get_network_output_gpu(net);
 	return out;

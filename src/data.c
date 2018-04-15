@@ -269,7 +269,7 @@ void fill_truth_region(char *path, float *truth, int classes, int num_boxes, int
         h =  boxes[i].h;
         id = boxes[i].id;
 
-        if (w < .01 || h < .01) continue;
+        if (w < .001 || h < .001) continue;
 
         int col = (int)(x*num_boxes);
         int row = (int)(y*num_boxes);
@@ -292,7 +292,8 @@ void fill_truth_region(char *path, float *truth, int classes, int num_boxes, int
     free(boxes);
 }
 
-void fill_truth_detection(char *path, int num_boxes, float *truth, int classes, int flip, float dx, float dy, float sx, float sy)
+void fill_truth_detection(char *path, int num_boxes, float *truth, int classes, int flip, float dx, float dy, float sx, float sy, 
+	int small_object, int net_w, int net_h)
 {
     char labelpath[4096];
     find_replace(path, "images", "labels", labelpath);
@@ -304,13 +305,21 @@ void fill_truth_detection(char *path, int num_boxes, float *truth, int classes, 
     find_replace(labelpath, ".JPG", ".txt", labelpath);
     find_replace(labelpath, ".JPEG", ".txt", labelpath);
     int count = 0;
+	int i;
     box_label *boxes = read_boxes(labelpath, &count);
+	float lowest_w = 1.F / net_w;
+	float lowest_h = 1.F / net_h;
+	if (small_object == 1) {
+		for (i = 0; i < count; ++i) {
+			if (boxes[i].w < lowest_w) boxes[i].w = lowest_w;
+			if (boxes[i].h < lowest_h) boxes[i].h = lowest_h;
+		}
+	}
     randomize_boxes(boxes, count);
     correct_boxes(boxes, count, dx, dy, sx, sy, flip);
     if(count > num_boxes) count = num_boxes;
     float x,y,w,h;
     int id;
-    int i;
 
     for (i = 0; i < count; ++i) {
         x =  boxes[i].x;
@@ -319,7 +328,10 @@ void fill_truth_detection(char *path, int num_boxes, float *truth, int classes, 
         h =  boxes[i].h;
         id = boxes[i].id;
 
-        if ((w < .01 || h < .01)) continue;
+		// not detect small objects
+		//if ((w < 0.001F || h < 0.001F)) continue;
+		// if truth (box for object) is smaller than 1x1 pix
+		if ((w < lowest_w || h < lowest_h)) continue;
 
         truth[i*5+0] = x;
         truth[i*5+1] = y;
@@ -661,7 +673,18 @@ data load_data_swag(char **paths, int n, int classes, float jitter)
     return d;
 }
 
-data load_data_detection(int n, char **paths, int m, int w, int h, int boxes, int classes, float jitter, float hue, float saturation, float exposure)
+#ifdef OPENCV
+#include "opencv2/highgui/highgui_c.h"
+#include "opencv2/imgproc/imgproc_c.h"
+#include "opencv2/core/version.hpp"
+#ifndef CV_VERSION_EPOCH
+#include "opencv2/videoio/videoio_c.h"
+#include "opencv2/imgcodecs/imgcodecs_c.h"
+#endif
+
+#include "http_stream.h"
+
+data load_data_detection(int n, char **paths, int m, int w, int h, int boxes, int classes, float jitter, float hue, float saturation, float exposure, int small_object)
 {
     char **random_paths = get_random_paths(paths, n, m);
     int i;
@@ -674,10 +697,22 @@ data load_data_detection(int n, char **paths, int m, int w, int h, int boxes, in
 
     d.y = make_matrix(n, 5*boxes);
     for(i = 0; i < n; ++i){
-        image orig = load_image_color(random_paths[i], 0, 0);
+		const char *filename = random_paths[i];
 
-        int oh = orig.h;
-        int ow = orig.w;
+		int flag = 1;
+		IplImage *src;
+		if ((src = cvLoadImage(filename, flag)) == 0)
+		{
+			fprintf(stderr, "Cannot load image \"%s\"\n", filename);
+			char buff[256];
+			sprintf(buff, "echo %s >> bad.list", filename);
+			system(buff);
+			continue;
+			//exit(0);
+		}
+
+		int oh = src->height;
+		int ow = src->width;
 
         int dw = (ow*jitter);
         int dh = (oh*jitter);
@@ -694,25 +729,80 @@ data load_data_detection(int n, char **paths, int m, int w, int h, int boxes, in
         float sy = (float)sheight / oh;
 
         int flip = random_gen()%2;
-        image cropped = crop_image(orig, pleft, ptop, swidth, sheight);
 
         float dx = ((float)pleft/ow)/sx;
         float dy = ((float)ptop /oh)/sy;
 
-        image sized = resize_image(cropped, w, h);
-        if(flip) flip_image(sized);
-        random_distort_image(sized, hue, saturation, exposure);
-        d.X.vals[i] = sized.data;
+		float dhue = rand_uniform_strong(-hue, hue);
+		float dsat = rand_scale(saturation);
+		float dexp = rand_scale(exposure);
 
-        fill_truth_detection(random_paths[i], boxes, d.y.vals[i], classes, flip, dx, dy, 1./sx, 1./sy);
+		image ai = image_data_augmentation(src, w, h, pleft, ptop, swidth, sheight, flip, jitter, dhue, dsat, dexp);
+		d.X.vals[i] = ai.data;
+		
+		//show_image(ai, "aug");
+		//cvWaitKey(0);
 
-        free_image(orig);
-        free_image(cropped);
+        fill_truth_detection(filename, boxes, d.y.vals[i], classes, flip, dx, dy, 1./sx, 1./sy, small_object, w, h);
+
+		cvReleaseImage(&src);
     }
     free(random_paths);
     return d;
 }
+#else	// OPENCV
+data load_data_detection(int n, char **paths, int m, int w, int h, int boxes, int classes, float jitter, float hue, float saturation, float exposure, int small_object)
+{
+	char **random_paths = get_random_paths(paths, n, m);
+	int i;
+	data d = { 0 };
+	d.shallow = 0;
 
+	d.X.rows = n;
+	d.X.vals = calloc(d.X.rows, sizeof(float*));
+	d.X.cols = h*w * 3;
+
+	d.y = make_matrix(n, 5 * boxes);
+	for (i = 0; i < n; ++i) {
+		image orig = load_image_color(random_paths[i], 0, 0);
+
+		int oh = orig.h;
+		int ow = orig.w;
+
+		int dw = (ow*jitter);
+		int dh = (oh*jitter);
+
+		int pleft = rand_uniform_strong(-dw, dw);
+		int pright = rand_uniform_strong(-dw, dw);
+		int ptop = rand_uniform_strong(-dh, dh);
+		int pbot = rand_uniform_strong(-dh, dh);
+
+		int swidth = ow - pleft - pright;
+		int sheight = oh - ptop - pbot;
+
+		float sx = (float)swidth / ow;
+		float sy = (float)sheight / oh;
+
+		int flip = random_gen() % 2;
+		image cropped = crop_image(orig, pleft, ptop, swidth, sheight);
+
+		float dx = ((float)pleft / ow) / sx;
+		float dy = ((float)ptop / oh) / sy;
+
+		image sized = resize_image(cropped, w, h);
+		if (flip) flip_image(sized);
+		random_distort_image(sized, hue, saturation, exposure);
+		d.X.vals[i] = sized.data;
+
+		fill_truth_detection(random_paths[i], boxes, d.y.vals[i], classes, flip, dx, dy, 1. / sx, 1. / sy, small_object, w, h);
+
+		free_image(orig);
+		free_image(cropped);
+	}
+	free(random_paths);
+	return d;
+}
+#endif	// OPENCV
 
 void *load_thread(void *ptr)
 {
@@ -734,7 +824,7 @@ void *load_thread(void *ptr)
     } else if (a.type == REGION_DATA){
         *a.d = load_data_region(a.n, a.paths, a.m, a.w, a.h, a.num_boxes, a.classes, a.jitter, a.hue, a.saturation, a.exposure);
     } else if (a.type == DETECTION_DATA){
-        *a.d = load_data_detection(a.n, a.paths, a.m, a.w, a.h, a.num_boxes, a.classes, a.jitter, a.hue, a.saturation, a.exposure);
+        *a.d = load_data_detection(a.n, a.paths, a.m, a.w, a.h, a.num_boxes, a.classes, a.jitter, a.hue, a.saturation, a.exposure, a.small_object);
     } else if (a.type == SWAG_DATA){
         *a.d = load_data_swag(a.paths, a.n, a.classes, a.jitter);
     } else if (a.type == COMPARE_DATA){
@@ -742,6 +832,9 @@ void *load_thread(void *ptr)
     } else if (a.type == IMAGE_DATA){
         *(a.im) = load_image_color(a.path, 0, 0);
         *(a.resized) = resize_image(*(a.im), a.w, a.h);
+	}else if (a.type == LETTERBOX_DATA) {
+		*(a.im) = load_image_color(a.path, 0, 0);
+		*(a.resized) = letterbox_image(*(a.im), a.w, a.h);
     } else if (a.type == TAG_DATA){
         *a.d = load_data_tag(a.paths, a.n, a.m, a.classes, a.min, a.max, a.size, a.angle, a.aspect, a.hue, a.saturation, a.exposure);
     }
@@ -960,8 +1053,8 @@ data load_cifar10_data(char *filename)
     for(i = 0; i < 10000; ++i){
         unsigned char bytes[3073];
         fread(bytes, 1, 3073, fp);
-        int class = bytes[0];
-        y.vals[i][class] = 1;
+        int class_id = bytes[0];
+        y.vals[i][class_id] = 1;
         for(j = 0; j < X.cols; ++j){
             X.vals[i][j] = (double)bytes[j+1];
         }
@@ -1024,8 +1117,8 @@ data load_all_cifar10()
         for(i = 0; i < 10000; ++i){
             unsigned char bytes[3073];
             fread(bytes, 1, 3073, fp);
-            int class = bytes[0];
-            y.vals[i+b*10000][class] = 1;
+            int class_id = bytes[0];
+            y.vals[i+b*10000][class_id] = 1;
             for(j = 0; j < X.cols; ++j){
                 X.vals[i+b*10000][j] = (double)bytes[j+1];
             }

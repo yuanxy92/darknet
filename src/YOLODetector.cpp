@@ -40,7 +40,7 @@ struct YOLO_detector_ptr{
 /*                                  YOLODetector class                            */
 /**********************************************************************************/
 
-YOLO_DETECTOR_API YOLODetector::YOLODetector(): nms(0.4), thresh(0.2), isInit(false) {}
+YOLO_DETECTOR_API YOLODetector::YOLODetector(): nms(0.02), thresh(0.2), isInit(false) {}
 YOLO_DETECTOR_API YOLODetector::~YOLODetector() {}
 
 /**
@@ -96,7 +96,7 @@ YOLO_DETECTOR_API cv::Mat YOLODetector::draw_boxes(cv::Mat mat_img,
 	int const colors[6][3] = { { 1,0,1 },{ 0,0,1 },{ 0,1,1 },{ 0,1,0 },{ 1,1,0 },{ 1,0,0 } };
 	for (auto &i : result_vec) {
 		if (i.prob < 0.25)
-			break;
+			continue;
 		int const offset = i.obj_id * 123457 % 6;
 		int const color_scale = 150 + (i.obj_id * 123457) % 100;
 		cv::Scalar color(colors[offset][0], colors[offset][1], colors[offset][2]);
@@ -223,13 +223,20 @@ YOLO_DETECTOR_API int YOLODetector::detect(float* img_d, int w, int h,
 	//float *prediction = network_predict(detector->net, img_d);
 	// generate final bounding box infos
 	layer l = detector->net.layers[detector->net.n - 1];
-	get_region_boxes(l, 1, 1, thresh, detector->probs, detector->boxes, 0, 0);
-	if (nms) 
-		do_nms_sort(detector->boxes, detector->probs, l.w*l.h*l.n, l.classes, nms);
-	for (size_t i = 0; i < (l.w*l.h*l.n); ++i) {
-		box b = detector->boxes[i];
-		int const obj_id = max_index(detector->probs[i], l.classes);
-		float const prob = detector->probs[i][obj_id];
+
+	//get_region_boxes(l, 1, 1, thresh, detector->probs, detector->boxes, 0, 0);
+	//if (nms) 
+	//	do_nms_sort(detector->boxes, detector->probs, l.w*l.h*l.n, l.classes, nms);
+
+	int nboxes = 0;
+	int letterbox = 0;
+	float hier_thresh = 0.5;
+	detection *dets = get_network_boxes(&detector->net, w, h, thresh, hier_thresh, 0, 1, &nboxes, letterbox);
+	if (nms) do_nms_sort(dets, nboxes, l.classes, nms);
+	for (size_t i = 0; i < nboxes; ++i) {
+		box b = dets[i].bbox;
+		int const obj_id = max_index(dets[i].prob, l.classes);
+		float const prob = dets[i].prob[obj_id];
 		if (prob > thresh) {
 			bbox_t bbox;
 			bbox.x = std::max<double>((double)0, (b.x - b.w / 2.) * w);

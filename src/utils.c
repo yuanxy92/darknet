@@ -7,12 +7,23 @@
 #include <limits.h>
 #ifdef WIN32
 #include "unistd.h"
+#include "gettimeofday.h"
 #else
 #include <unistd.h>
+#include <sys/time.h>
 #endif
 #include "utils.h"
 
 #pragma warning(disable: 4996)
+
+double what_time_is_it_now()
+{
+	struct timeval time;
+	if (gettimeofday(&time, NULL)) {
+		return 0;
+	}
+	return (double)time.tv_sec + (double)time.tv_usec * .000001;
+}
 
 int *read_map(char *filename)
 {
@@ -286,7 +297,8 @@ char *fgetl(FILE *fp)
         fgets(&line[curr], readsize, fp);
         curr = strlen(line);
     }
-    if(line[curr-1] == '\n') line[curr-1] = '\0';
+    if(line[curr-2] == 0x0d) line[curr-2] = 0x00;
+    if(line[curr-1] == 0x0a) line[curr-1] = 0x00;
 
     return line;
 }
@@ -542,6 +554,15 @@ int max_index(float *a, int n)
         }
     }
     return max_i;
+}
+
+int int_index(int *a, int val, int n)
+{
+	int i;
+	for (i = 0; i < n; ++i) {
+		if (a[i] == val) return i;
+	}
+	return -1;
 }
 
 int rand_int(int min, int max)

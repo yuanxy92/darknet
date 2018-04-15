@@ -32,7 +32,7 @@ typedef struct{
 } data;
 
 typedef enum {
-    CLASSIFICATION_DATA, DETECTION_DATA, CAPTCHA_DATA, REGION_DATA, IMAGE_DATA, COMPARE_DATA, WRITING_DATA, SWAG_DATA, TAG_DATA, OLD_CLASSIFICATION_DATA, STUDY_DATA, DET_DATA, SUPER_DATA
+    CLASSIFICATION_DATA, DETECTION_DATA, CAPTCHA_DATA, REGION_DATA, IMAGE_DATA, LETTERBOX_DATA, COMPARE_DATA, WRITING_DATA, SWAG_DATA, TAG_DATA, OLD_CLASSIFICATION_DATA, STUDY_DATA, DET_DATA, SUPER_DATA
 } data_type;
 
 typedef struct load_args{
@@ -53,6 +53,7 @@ typedef struct load_args{
     int classes;
     int background;
     int scale;
+	int small_object;
     float jitter;
     float angle;
     float aspect;
@@ -82,7 +83,7 @@ void print_letters(float *pred, int n);
 data load_data_captcha(char **paths, int n, int m, int k, int w, int h);
 data load_data_captcha_encode(char **paths, int n, int m, int w, int h);
 data load_data_old(char **paths, int n, int m, char **labels, int k, int w, int h);
-data load_data_detection(int n, char **paths, int m, int w, int h, int boxes, int classes, float jitter, float hue, float saturation, float exposure);
+data load_data_detection(int n, char **paths, int m, int w, int h, int boxes, int classes, float jitter, float hue, float saturation, float exposure, int small_object);
 data load_data_tag(char **paths, int n, int m, int k, int min, int max, int size, float angle, float aspect, float hue, float saturation, float exposure);
 matrix load_image_augment_paths(char **paths, int n, int min, int max, int size, float angle, float aspect, float hue, float saturation, float exposure);
 data load_data_super(char **paths, int n, int m, int w, int h, int scale);

@@ -24,11 +24,14 @@
 #include "parser.h"
 #include "region_layer.h"
 #include "reorg_layer.h"
+#include "reorg_old_layer.h"
 #include "rnn_layer.h"
 #include "route_layer.h"
 #include "shortcut_layer.h"
 #include "softmax_layer.h"
 #include "utils.h"
+#include "upsample_layer.h"
+#include "yolo_layer.h"
 #include <stdint.h>
 
 typedef struct{
@@ -46,6 +49,7 @@ LAYER_TYPE string_to_layer_type(char * type)
     if (strcmp(type, "[cost]")==0) return COST;
     if (strcmp(type, "[detection]")==0) return DETECTION;
     if (strcmp(type, "[region]")==0) return REGION;
+	if (strcmp(type, "[yolo]") == 0) return YOLO;
     if (strcmp(type, "[local]")==0) return LOCAL;
     if (strcmp(type, "[conv]")==0
             || strcmp(type, "[convolutional]")==0) return CONVOLUTIONAL;
@@ -60,6 +64,7 @@ LAYER_TYPE string_to_layer_type(char * type)
     if (strcmp(type, "[max]")==0
             || strcmp(type, "[maxpool]")==0) return MAXPOOL;
     if (strcmp(type, "[reorg]")==0) return REORG;
+	if (strcmp(type, "[reorg_old]") == 0) return REORG_OLD;
     if (strcmp(type, "[avg]")==0
             || strcmp(type, "[avgpool]")==0) return AVGPOOL;
     if (strcmp(type, "[dropout]")==0) return DROPOUT;
@@ -69,6 +74,7 @@ LAYER_TYPE string_to_layer_type(char * type)
     if (strcmp(type, "[soft]")==0
             || strcmp(type, "[softmax]")==0) return SOFTMAX;
     if (strcmp(type, "[route]")==0) return ROUTE;
+	if (strcmp(type, "[upsample]") == 0) return UPSAMPLE;
     return BLANK;
 }
 
@@ -233,20 +239,83 @@ softmax_layer parse_softmax(list *options, size_params params)
     return layer;
 }
 
+int *parse_yolo_mask(char *a, int *num)
+{
+	int *mask = 0;
+	if (a) {
+		int len = strlen(a);
+		int n = 1;
+		int i;
+		for (i = 0; i < len; ++i) {
+			if (a[i] == ',') ++n;
+		}
+		mask = calloc(n, sizeof(int));
+		for (i = 0; i < n; ++i) {
+			int val = atoi(a);
+			mask[i] = val;
+			a = strchr(a, ',') + 1;
+		}
+		*num = n;
+	}
+	return mask;
+}
+
+layer parse_yolo(list *options, size_params params)
+{
+	int classes = option_find_int(options, "classes", 20);
+	int total = option_find_int(options, "num", 1);
+	int num = total;
+
+	char *a = option_find_str(options, "mask", 0);
+	int *mask = parse_yolo_mask(a, &num);
+	int max_boxes = option_find_int_quiet(options, "max", 30);
+	layer l = make_yolo_layer(params.batch, params.w, params.h, num, total, mask, classes, max_boxes);
+	assert(l.outputs == params.inputs);
+
+	//l.max_boxes = option_find_int_quiet(options, "max", 90);
+	l.jitter = option_find_float(options, "jitter", .2);
+	l.focal_loss = option_find_int_quiet(options, "focal_loss", 0);
+
+	l.ignore_thresh = option_find_float(options, "ignore_thresh", .5);
+	l.truth_thresh = option_find_float(options, "truth_thresh", 1);
+	l.random = option_find_int_quiet(options, "random", 0);
+
+	char *map_file = option_find_str(options, "map", 0);
+	if (map_file) l.map = read_map(map_file);
+
+	a = option_find_str(options, "anchors", 0);
+	if (a) {
+		int len = strlen(a);
+		int n = 1;
+		int i;
+		for (i = 0; i < len; ++i) {
+			if (a[i] == ',') ++n;
+		}
+		for (i = 0; i < n; ++i) {
+			float bias = atof(a);
+			l.biases[i] = bias;
+			a = strchr(a, ',') + 1;
+		}
+	}
+	return l;
+}
+
 layer parse_region(list *options, size_params params)
 {
     int coords = option_find_int(options, "coords", 4);
     int classes = option_find_int(options, "classes", 20);
     int num = option_find_int(options, "num", 1);
+	int max_boxes = option_find_int_quiet(options, "max", 30);
 
-    layer l = make_region_layer(params.batch, params.w, params.h, num, classes, coords);
+    layer l = make_region_layer(params.batch, params.w, params.h, num, classes, coords, max_boxes);
     assert(l.outputs == params.inputs);
 
     l.log = option_find_int_quiet(options, "log", 0);
     l.sqrt = option_find_int_quiet(options, "sqrt", 0);
 
     l.softmax = option_find_int(options, "softmax", 0);
-    l.max_boxes = option_find_int_quiet(options, "max",30);
+	l.focal_loss = option_find_int_quiet(options, "focal_loss", 0);
+    //l.max_boxes = option_find_int_quiet(options, "max",30);
     l.jitter = option_find_float(options, "jitter", .2);
     l.rescore = option_find_int_quiet(options, "rescore",0);
 
@@ -258,6 +327,7 @@ layer parse_region(list *options, size_params params)
     l.coord_scale = option_find_float(options, "coord_scale", 1);
     l.object_scale = option_find_float(options, "object_scale", 1);
     l.noobject_scale = option_find_float(options, "noobject_scale", 1);
+	l.mask_scale = option_find_float(options, "mask_scale", 1);
     l.class_scale = option_find_float(options, "class_scale", 1);
     l.bias_match = option_find_int_quiet(options, "bias_match",0);
 
@@ -356,6 +426,23 @@ layer parse_reorg(list *options, size_params params)
     return layer;
 }
 
+layer parse_reorg_old(list *options, size_params params)
+{
+	printf("\n reorg_old \n");
+	int stride = option_find_int(options, "stride", 1);
+	int reverse = option_find_int_quiet(options, "reverse", 0);
+
+	int batch, h, w, c;
+	h = params.h;
+	w = params.w;
+	c = params.c;
+	batch = params.batch;
+	if (!(h && w && c)) error("Layer before reorg layer must output image.");
+
+	layer layer = make_reorg_old_layer(batch, w, h, c, stride, reverse);
+	return layer;
+}
+
 maxpool_layer parse_maxpool(list *options, size_params params)
 {
     int stride = option_find_int(options, "stride",1);
@@ -447,6 +534,15 @@ layer parse_activation(list *options, size_params params)
     return l;
 }
 
+layer parse_upsample(list *options, size_params params, network net)
+{
+
+	int stride = option_find_int(options, "stride", 2);
+	layer l = make_upsample_layer(params.batch, params.w, params.h, params.c, stride);
+	l.scale = option_find_float_quiet(options, "scale", 1);
+	return l;
+}
+
 route_layer parse_route(list *options, size_params params, network net)
 {
     char *l = option_find(options, "layers");   
@@ -527,11 +623,13 @@ void parse_net_options(list *options, network *net)
     net->max_crop = option_find_int_quiet(options, "max_crop",net->w*2);
     net->min_crop = option_find_int_quiet(options, "min_crop",net->w);
 
+	net->small_object = option_find_int_quiet(options, "small_object", 0);
     net->angle = option_find_float_quiet(options, "angle", 0);
     net->aspect = option_find_float_quiet(options, "aspect", 1);
     net->saturation = option_find_float_quiet(options, "saturation", 1);
     net->exposure = option_find_float_quiet(options, "exposure", 1);
     net->hue = option_find_float_quiet(options, "hue", 0);
+	net->power = option_find_float_quiet(options, "power", 4);
 
     if(!net->inputs && !(net->h && net->w && net->c)) error("No input parameters supplied");
 
@@ -571,7 +669,7 @@ void parse_net_options(list *options, network *net)
         net->gamma = option_find_float(options, "gamma", 1);
         net->step = option_find_int(options, "step", 1);
     } else if (net->policy == POLY || net->policy == RANDOM){
-        net->power = option_find_float(options, "power", 1);
+        //net->power = option_find_float(options, "power", 1);
     }
     net->max_batches = option_find_int(options, "max_batches", 0);
 }
@@ -642,6 +740,8 @@ network parse_network_cfg_custom(char *filename, int batch)
             l = parse_cost(options, params);
         }else if(lt == REGION){
             l = parse_region(options, params);
+		}else if (lt == YOLO) {
+			l = parse_yolo(options, params);
         }else if(lt == DETECTION){
             l = parse_detection(options, params);
         }else if(lt == SOFTMAX){
@@ -654,11 +754,15 @@ network parse_network_cfg_custom(char *filename, int batch)
         }else if(lt == MAXPOOL){
             l = parse_maxpool(options, params);
         }else if(lt == REORG){
-            l = parse_reorg(options, params);
+            l = parse_reorg(options, params);		}
+		else if (lt == REORG_OLD) {
+			l = parse_reorg_old(options, params);
         }else if(lt == AVGPOOL){
             l = parse_avgpool(options, params);
         }else if(lt == ROUTE){
             l = parse_route(options, params, net);
+		}else if (lt == UPSAMPLE) {
+			l = parse_upsample(options, params, net);
         }else if(lt == SHORTCUT){
             l = parse_shortcut(options, params, net);
         }else if(lt == DROPOUT){
@@ -672,6 +776,8 @@ network parse_network_cfg_custom(char *filename, int batch)
         }else{
             fprintf(stderr, "Type not recognized: %s\n", s->type);
         }
+        l.onlyforward = option_find_int_quiet(options, "onlyforward", 0);
+        l.stopbackward = option_find_int_quiet(options, "stopbackward", 0);
         l.dontload = option_find_int_quiet(options, "dontload", 0);
         l.dontloadscales = option_find_int_quiet(options, "dontloadscales", 0);
         option_unused(options);

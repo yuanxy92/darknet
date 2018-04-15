@@ -12,6 +12,12 @@ set(exename_lib "yolo_lib_exe")
 set(libname "yolo_lib")
 project ( ${name} )
 
+# set output path
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${PROJECT_BINARY_DIR}/bin/Debug)    
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${PROJECT_BINARY_DIR}/bin/Release)
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_DEBUG ${PROJECT_BINARY_DIR}/bin/Debug)    
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_RELEASE ${PROJECT_BINARY_DIR}/bin/Release)  
+
 #c++ version
 set (CMAKE_CXX_STANDARD 11)
 
@@ -82,6 +88,10 @@ set(MY_HEADER_FILES
     tree.h
     unistd.h
     utils.h
+    reorg_old_layer.h
+    upsample_layer.h
+    yolo_layer.h
+    http_stream.h
 )
 set(MY_CUDA_FILES
     # CUDA files
@@ -160,6 +170,10 @@ set(MY_SOURCE_FILES
     voxel.c
     writing.c
     yolo.c
+    reorg_old_layer.c
+    upsample_layer.c
+    yolo_layer.c
+    http_stream.cpp
 )
 
 include_directories(
@@ -219,8 +233,8 @@ target_link_libraries(${exename_lib}
 	${CUDA_curand_LIBRARY}
 	${CUDA_npp_LIBRARY}
     ${CUDA_nppc_LIBRARY}
-    debug E:/Project/YOLO/build/Debug/yolo_libd.lib
-	optimized E:/Project/YOLO/build/Release/yolo_lib.lib
+    debug ${PROJECT_BINARY_DIR}/bin/Debug/yolo_libd.lib
+	optimized ${PROJECT_BINARY_DIR}/bin/Release/yolo_lib.lib
 )
 
 target_link_libraries(${libname} 

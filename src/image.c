@@ -17,9 +17,10 @@
 #ifndef CV_VERSION_EPOCH
 #include "opencv2/videoio/videoio_c.h"
 #include "opencv2/imgcodecs/imgcodecs_c.h"
+#include "http_stream.h"
 #endif
+#include "http_stream.h"
 #endif
-
 
 int windows = 0;
 
@@ -90,6 +91,23 @@ image get_label(image **characters, char *string, int size)
     image b = border_image(label, label.h*.25);
     free_image(label);
     return b;
+}
+
+image get_label_v3(image **characters, char *string, int size)
+{
+	size = size / 10;
+	if (size > 7) size = 7;
+	image label = make_empty_image(0, 0, 0);
+	while (*string) {
+		image l = characters[size][(int)*string];
+		image n = tile_images(label, l, -size - 1 + (size + 1) / 2);
+		free_image(label);
+		label = n;
+		++string;
+	}
+	image b = border_image(label, label.h*.25);
+	free_image(label);
+	return b;
 }
 
 void draw_label(image a, int r, int c, image label, const float *rgb)
@@ -182,13 +200,93 @@ image **load_alphabet()
     return alphabets;
 }
 
+void draw_detections_v3(image im, detection *dets, int num, float thresh, char **names, image **alphabet, int classes)
+{
+	int i, j;
+
+	for (i = 0; i < num; ++i) {
+		char labelstr[4096] = { 0 };
+		int class_id = -1;
+		for (j = 0; j < classes; ++j) {
+			if (dets[i].prob[j] > thresh) {
+				if (class_id < 0) {
+					strcat(labelstr, names[j]);
+					class_id = j;
+				}
+				else {
+					strcat(labelstr, ", ");
+					strcat(labelstr, names[j]);
+				}
+				printf("%s: %.0f%%\n", names[j], dets[i].prob[j] * 100);
+			}
+		}
+		if (class_id >= 0) {
+			int width = im.h * .006;
+
+			/*
+			if(0){
+			width = pow(prob, 1./2.)*10+1;
+			alphabet = 0;
+			}
+			*/
+
+			//printf("%d %s: %.0f%%\n", i, names[class_id], prob*100);
+			int offset = class_id * 123457 % classes;
+			float red = get_color(2, offset, classes);
+			float green = get_color(1, offset, classes);
+			float blue = get_color(0, offset, classes);
+			float rgb[3];
+
+			//width = prob*20+2;
+
+			rgb[0] = red;
+			rgb[1] = green;
+			rgb[2] = blue;
+			box b = dets[i].bbox;
+			//printf("%f %f %f %f\n", b.x, b.y, b.w, b.h);
+
+			int left = (b.x - b.w / 2.)*im.w;
+			int right = (b.x + b.w / 2.)*im.w;
+			int top = (b.y - b.h / 2.)*im.h;
+			int bot = (b.y + b.h / 2.)*im.h;
+
+			if (left < 0) left = 0;
+			if (right > im.w - 1) right = im.w - 1;
+			if (top < 0) top = 0;
+			if (bot > im.h - 1) bot = im.h - 1;
+
+			//int b_x_center = (left + right) / 2;
+			//int b_y_center = (top + bot) / 2;
+			//int b_width = right - left;
+			//int b_height = bot - top;
+			//sprintf(labelstr, "%d x %d - w: %d, h: %d", b_x_center, b_y_center, b_width, b_height);
+
+			draw_box_width(im, left, top, right, bot, width, red, green, blue);
+			if (alphabet) {
+				image label = get_label_v3(alphabet, labelstr, (im.h*.03));
+				draw_label(im, top + width, left, label, rgb);
+				free_image(label);
+			}
+			if (dets[i].mask) {
+				image mask = float_to_image(14, 14, 1, dets[i].mask);
+				image resized_mask = resize_image(mask, b.w*im.w, b.h*im.h);
+				image tmask = threshold_image(resized_mask, .5);
+				embed_image(tmask, im, left, top);
+				free_image(mask);
+				free_image(resized_mask);
+				free_image(tmask);
+			}
+		}
+	}
+}
+
 void draw_detections(image im, int num, float thresh, box *boxes, float **probs, char **names, image **alphabet, int classes)
 {
     int i;
 
     for(i = 0; i < num; ++i){
-        int class = max_index(probs[i], classes);
-        float prob = probs[i][class];
+        int class_id = max_index(probs[i], classes);
+        float prob = probs[i][class_id];
         if(prob > thresh){
 
 			//// for comparison with OpenCV version of DNN Darknet Yolo v2
@@ -206,8 +304,7 @@ void draw_detections(image im, int num, float thresh, box *boxes, float **probs,
                 alphabet = 0;
             }
 
-            printf("%s: %.0f%%\n", names[class], prob*100);
-            int offset = class*123457 % classes;
+            int offset = class_id*123457 % classes;
             float red = get_color(2,offset,classes);
             float green = get_color(1,offset,classes);
             float blue = get_color(0,offset,classes);
@@ -229,10 +326,15 @@ void draw_detections(image im, int num, float thresh, box *boxes, float **probs,
             if(right > im.w-1) right = im.w-1;
             if(top < 0) top = 0;
             if(bot > im.h-1) bot = im.h-1;
+			printf("%s: %.0f%%", names[class_id], prob * 100);
+			
+			//printf(" - id: %d, x_center: %d, y_center: %d, width: %d, height: %d",
+			//	class_id, (right + left) / 2, (bot - top) / 2, right - left, bot - top);
 
+			printf("\n");
             draw_box_width(im, left, top, right, bot, width, red, green, blue);
             if (alphabet) {
-                image label = get_label(alphabet, names[class], (im.h*.03)/10);
+                image label = get_label(alphabet, names[class_id], (im.h*.03)/10);
                 draw_label(im, top + width, left, label, rgb);
             }
         }
@@ -240,13 +342,106 @@ void draw_detections(image im, int num, float thresh, box *boxes, float **probs,
 }
 
 #ifdef OPENCV
+
+void draw_detections_cv_v3(IplImage* show_img, detection *dets, int num, float thresh, char **names, image **alphabet, int classes)
+{
+	int i, j;
+	if (!show_img) return;
+
+	for (i = 0; i < num; ++i) {
+		char labelstr[4096] = { 0 };
+		int class_id = -1;
+		for (j = 0; j < classes; ++j) {
+			if (dets[i].prob[j] > thresh) {
+				if (class_id < 0) {
+					strcat(labelstr, names[j]);
+					class_id = j;
+				}
+				else {
+					strcat(labelstr, ", ");
+					strcat(labelstr, names[j]);
+				}
+				printf("%s: %.0f%%\n", names[j], dets[i].prob[j] * 100);
+			}
+		}
+		if (class_id >= 0) {
+			int width = show_img->height * .006;
+
+			/*
+			if(0){
+			width = pow(prob, 1./2.)*10+1;
+			alphabet = 0;
+			}
+			*/
+
+			//printf("%d %s: %.0f%%\n", i, names[class_id], prob*100);
+			int offset = class_id * 123457 % classes;
+			float red = get_color(2, offset, classes);
+			float green = get_color(1, offset, classes);
+			float blue = get_color(0, offset, classes);
+			float rgb[3];
+
+			//width = prob*20+2;
+
+			rgb[0] = red;
+			rgb[1] = green;
+			rgb[2] = blue;
+			box b = dets[i].bbox;
+			//printf("%f %f %f %f\n", b.x, b.y, b.w, b.h);
+
+			int left = (b.x - b.w / 2.)*show_img->width;
+			int right = (b.x + b.w / 2.)*show_img->width;
+			int top = (b.y - b.h / 2.)*show_img->height;
+			int bot = (b.y + b.h / 2.)*show_img->height;
+
+			if (left < 0) left = 0;
+			if (right > show_img->width - 1) right = show_img->width - 1;
+			if (top < 0) top = 0;
+			if (bot > show_img->height - 1) bot = show_img->height - 1;
+
+			//int b_x_center = (left + right) / 2;
+			//int b_y_center = (top + bot) / 2;
+			//int b_width = right - left;
+			//int b_height = bot - top;
+			//sprintf(labelstr, "%d x %d - w: %d, h: %d", b_x_center, b_y_center, b_width, b_height);
+
+			float const font_size = show_img->height / 1000.F;
+			CvPoint pt1, pt2, pt_text, pt_text_bg1, pt_text_bg2;
+			pt1.x = left;
+			pt1.y = top;
+			pt2.x = right;
+			pt2.y = bot;
+			pt_text.x = left;
+			pt_text.y = top - 12;
+			pt_text_bg1.x = left;
+			pt_text_bg1.y = top - (10 + 25 * font_size);
+			pt_text_bg2.x = right;
+			pt_text_bg2.y = top;
+			CvScalar color;
+			color.val[0] = red * 256;
+			color.val[1] = green * 256;
+			color.val[2] = blue * 256;
+
+			cvRectangle(show_img, pt1, pt2, color, width, 8, 0);
+			//printf("left=%d, right=%d, top=%d, bottom=%d, obj_id=%d, obj=%s \n", left, right, top, bot, class_id, names[class_id]);
+			cvRectangle(show_img, pt_text_bg1, pt_text_bg2, color, width, 8, 0);
+			cvRectangle(show_img, pt_text_bg1, pt_text_bg2, color, CV_FILLED, 8, 0);	// filled
+			CvScalar black_color;
+			black_color.val[0] = 0;
+			CvFont font;
+			cvInitFont(&font, CV_FONT_HERSHEY_SIMPLEX, font_size, font_size, 0, font_size * 3, 8);
+			cvPutText(show_img, labelstr, pt_text, &font, black_color);
+		}
+	}
+}
+
 void draw_detections_cv(IplImage* show_img, int num, float thresh, box *boxes, float **probs, char **names, image **alphabet, int classes)
 {
 	int i;
 
 	for (i = 0; i < num; ++i) {
-		int class = max_index(probs[i], classes);
-		float prob = probs[i][class];
+		int class_id = max_index(probs[i], classes);
+		float prob = probs[i][class_id];
 		if (prob > thresh) {
 
 			int width = show_img->height * .012;
@@ -256,8 +451,8 @@ void draw_detections_cv(IplImage* show_img, int num, float thresh, box *boxes, f
 				alphabet = 0;
 			}
 
-			printf("%s: %.0f%%\n", names[class], prob * 100);
-			int offset = class * 123457 % classes;
+			printf("%s: %.0f%%\n", names[class_id], prob * 100);
+			int offset = class_id * 123457 % classes;
 			float red = get_color(2, offset, classes);
 			float green = get_color(1, offset, classes);
 			float blue = get_color(0, offset, classes);
@@ -298,18 +493,88 @@ void draw_detections_cv(IplImage* show_img, int num, float thresh, box *boxes, f
 			color.val[2] = blue * 256;
 
 			cvRectangle(show_img, pt1, pt2, color, width, 8, 0);
-			//printf("left=%d, right=%d, top=%d, bottom=%d, obj_id=%d, obj=%s \n", left, right, top, bot, class, names[class]);
+			//printf("left=%d, right=%d, top=%d, bottom=%d, obj_id=%d, obj=%s \n", left, right, top, bot, class_id, names[class_id]);
 			cvRectangle(show_img, pt_text_bg1, pt_text_bg2, color, width, 8, 0);
 			cvRectangle(show_img, pt_text_bg1, pt_text_bg2, color, CV_FILLED, 8, 0);	// filled
 			CvScalar black_color;
 			black_color.val[0] = 0;
 			CvFont font;
 			cvInitFont(&font, CV_FONT_HERSHEY_SIMPLEX, font_size, font_size, 0, font_size * 3, 8);	
-			cvPutText(show_img, names[class], pt_text, &font, black_color);
+			cvPutText(show_img, names[class_id], pt_text, &font, black_color);
 		}
 	}
 }
-#endif
+
+IplImage* draw_train_chart(float max_img_loss, int max_batches, int number_of_lines, int img_size)
+{
+	int img_offset = 50;
+	int draw_size = img_size - img_offset;
+	IplImage* img = cvCreateImage(cvSize(img_size, img_size), 8, 3);
+	cvSet(img, CV_RGB(255, 255, 255), 0);
+	CvPoint pt1, pt2, pt_text;
+	CvFont font;
+	cvInitFont(&font, CV_FONT_HERSHEY_COMPLEX_SMALL, 0.7, 0.7, 0, 1, CV_AA);
+	char char_buff[100];
+	int i;
+	// vertical lines
+	pt1.x = img_offset; pt2.x = img_size, pt_text.x = 10;
+	for (i = 1; i <= number_of_lines; ++i) {
+		pt1.y = pt2.y = (float)i * draw_size / number_of_lines;
+		cvLine(img, pt1, pt2, CV_RGB(224, 224, 224), 1, 8, 0);
+		if (i % 10 == 0) {
+			sprintf(char_buff, "%2.1f", max_img_loss*(number_of_lines - i) / number_of_lines);
+			pt_text.y = pt1.y + 5;
+			cvPutText(img, char_buff, pt_text, &font, CV_RGB(0, 0, 0));
+			cvLine(img, pt1, pt2, CV_RGB(128, 128, 128), 1, 8, 0);
+		}
+	}
+	// horizontal lines
+	pt1.y = draw_size; pt2.y = 0, pt_text.y = draw_size + 15;
+	for (i = 0; i <= number_of_lines; ++i) {
+		pt1.x = pt2.x = img_offset + (float)i * draw_size / number_of_lines;
+		cvLine(img, pt1, pt2, CV_RGB(224, 224, 224), 1, 8, 0);
+		if (i % 10 == 0) {
+			sprintf(char_buff, "%d", max_batches * i / number_of_lines);
+			pt_text.x = pt1.x - 20;
+			cvPutText(img, char_buff, pt_text, &font, CV_RGB(0, 0, 0));
+			cvLine(img, pt1, pt2, CV_RGB(128, 128, 128), 1, 8, 0);
+		}
+	}
+	cvPutText(img, "Iteration number", cvPoint(draw_size / 2, img_size - 10), &font, CV_RGB(0, 0, 0));
+	cvPutText(img, "Press 's' to save: chart.jpg", cvPoint(5, img_size - 10), &font, CV_RGB(0, 0, 0));
+	printf(" If error occurs - run training with flag: -dont_show \n");
+	cvNamedWindow("average loss", CV_WINDOW_NORMAL);
+	cvMoveWindow("average loss", 0, 0);
+	cvResizeWindow("average loss", img_size, img_size);
+	cvShowImage("average loss", img);
+	cvWaitKey(20);
+	return img;
+}
+
+void draw_train_loss(IplImage* img, int img_size, float avg_loss, float max_img_loss, int current_batch, int max_batches)
+{
+	int img_offset = 50;
+	int draw_size = img_size - img_offset;
+	CvFont font;
+	cvInitFont(&font, CV_FONT_HERSHEY_COMPLEX_SMALL, 0.7, 0.7, 0, 1, CV_AA);
+	char char_buff[100];
+	CvPoint pt1, pt2;
+	pt1.x = img_offset + draw_size * (float)current_batch / max_batches;
+	pt1.y = draw_size * (1 - avg_loss / max_img_loss);
+	if (pt1.y < 0) pt1.y = 1;
+	cvCircle(img, pt1, 1, CV_RGB(0, 0, 255), CV_FILLED, 8, 0);
+
+	sprintf(char_buff, "current avg loss = %2.4f", avg_loss);
+	pt1.x = img_size / 2, pt1.y = 30;
+	pt2.x = pt1.x + 250, pt2.y = pt1.y + 20;
+	cvRectangle(img, pt1, pt2, CV_RGB(255, 255, 255), CV_FILLED, 8, 0);
+	pt1.y += 15;
+	cvPutText(img, char_buff, pt1, &font, CV_RGB(0, 0, 0));
+	cvShowImage("average loss", img);
+	int k = cvWaitKey(20);
+	if (k == 's') cvSaveImage("chart.jpg", img, 0);
+}
+#endif	// OPENCV
 
 void transpose_image(image im)
 {
@@ -527,7 +792,7 @@ void show_image_cv(image p, const char *name)
 }
 
 
-void show_image_cv_ipl(IplImage *disp, const char *name, const char *out_filename)
+void show_image_cv_ipl(IplImage *disp, const char *name)
 {
 	if (disp == NULL) return;
 	char buff[256];
@@ -537,32 +802,7 @@ void show_image_cv_ipl(IplImage *disp, const char *name, const char *out_filenam
 	//cvMoveWindow(buff, 100*(windows%10) + 200*(windows/10), 100*(windows%10));
 	++windows;
 	cvShowImage(buff, disp);
-
-	if(out_filename)
-	{
-		CvSize size;
-		{
-			size.width = disp->width, size.height = disp->height;
-		}
-		
-		static CvVideoWriter* output_video = NULL;    // cv::VideoWriter output_video;
-		if (output_video == NULL)
-		{
-			//const char* output_name = "test_dnn_out.avi";
-			//output_video = cvCreateVideoWriter(out_filename, CV_FOURCC('H', '2', '6', '4'), 25, size, 1);
-			output_video = cvCreateVideoWriter(out_filename, CV_FOURCC('D', 'I', 'V', 'X'), 25, size, 1);
-			//output_video = cvCreateVideoWriter(out_filename, CV_FOURCC('M', 'J', 'P', 'G'), 25, size, 1);
-			//output_video = cvCreateVideoWriter(out_filename, CV_FOURCC('M', 'P', '4', 'V'), 25, size, 1);
-			//output_video = cvCreateVideoWriter(out_filename, CV_FOURCC('M', 'P', '4', '2'), 25, size, 1);
-			//output_video = cvCreateVideoWriter(out_filename, CV_FOURCC('X', 'V', 'I', 'D'), 25, size, 1);
-			//output_video = cvCreateVideoWriter(out_filename, CV_FOURCC('W', 'M', 'V', '2'), 25, size, 1);
-		}
-
-		cvWriteFrame(output_video, disp);	// comment this line to improve FPS !!!
-		printf("\n cvWriteFrame \n");
-	}
-
-	cvReleaseImage(&disp);
+	//cvReleaseImage(&disp);
 }
 #endif
 
@@ -633,9 +873,12 @@ image get_image_from_stream(CvCapture *cap)
     return im;
 }
 
-image get_image_from_stream_resize(CvCapture *cap, int w, int h, IplImage** in_img)
+image get_image_from_stream_resize(CvCapture *cap, int w, int h, IplImage** in_img, int use_webcam)
 {
-	IplImage* src = cvQueryFrame(cap);
+	IplImage* src;
+	if (use_webcam) src = get_webcam_frame(cap);
+	else src = cvQueryFrame(cap);
+
 	if (!src) return make_empty_image(0, 0, 0);
 	IplImage* new_img = cvCreateImage(cvSize(w, h), IPL_DEPTH_8U, 3);
 	*in_img = cvCreateImage(cvSize(src->width, src->height), IPL_DEPTH_8U, 3);
