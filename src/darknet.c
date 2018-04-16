@@ -348,7 +348,7 @@ void visualize(char *cfgfile, char *weightfile)
 #endif
 }
 
-int main2(int argc, char **argv)
+int main(int argc, char **argv)
 {
     //test_resize("data/bad.jpg");
     //test_box();

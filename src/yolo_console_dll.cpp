@@ -223,7 +223,7 @@ std::vector<std::string> objects_names_from_file(std::string const filename) {
 }
 
 
-int main(int argc, char *argv[])
+int main2(int argc, char *argv[])
 {
 	std::string cfg_file = "E:/data/YOLO/yolo_v3.cfg";
 	//std::string cfg_file = "E:/data/YOLO/yolo.cfg";
