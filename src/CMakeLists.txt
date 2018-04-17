@@ -231,8 +231,9 @@ target_link_libraries(${exename_lib}
 	${CUDA_curand_LIBRARY}
 	${CUDA_npp_LIBRARY}
     ${CUDA_nppc_LIBRARY}
-    debug ${PROJECT_BINARY_DIR}/bin/Debug/yolo_libd.lib
-	optimized ${PROJECT_BINARY_DIR}/bin/Release/yolo_lib.lib
+    #debug ${PROJECT_BINARY_DIR}/bin/Debug/yolo_libd.lib
+    #optimized ${PROJECT_BINARY_DIR}/bin/Release/yolo_lib.lib
+    yolo_lib
 )
 
 target_link_libraries(${libname} 
