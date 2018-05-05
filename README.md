@@ -1,4 +1,4 @@
-# Yolo-v2 Windows and Linux version
+# Yolo-v3 Windows and Linux version
 
 ## Download
 Pre-compiled windows libs: (Windows 10 + VS2015 + CUDA8)
