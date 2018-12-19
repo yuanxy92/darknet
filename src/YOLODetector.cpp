@@ -97,6 +97,9 @@ YOLO_DETECTOR_API cv::Mat YOLODetector::draw_boxes(cv::Mat mat_img,
 	for (auto &i : result_vec) {
 		if (i.prob < 0.25)
 			continue;
+		if (i.obj_id == 7) {
+			continue;
+		}
 		int const offset = i.obj_id * 123457 % 6;
 		int const color_scale = 150 + (i.obj_id * 123457) % 100;
 		cv::Scalar color(colors[offset][0], colors[offset][1], colors[offset][2]);
@@ -111,7 +114,7 @@ YOLO_DETECTOR_API cv::Mat YOLODetector::draw_boxes(cv::Mat mat_img,
 				std::max<int>((int)i.y - 30, 0)),
 				cv::Point2f(std::min<int>((int)i.x + max_width, mat_img.cols - 1),
 					std::min<int>((int)i.y, mat_img.rows - 1)),
-				color, CV_FILLED, 8, 0);
+				color, cv::FILLED, 8, 0);
 			putText(visualImg, obj_name, cv::Point2f(i.x, i.y - 10),
 				cv::FONT_HERSHEY_COMPLEX_SMALL, 1.2, cv::Scalar(0, 0, 0), 2);
 		}

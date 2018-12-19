@@ -290,11 +290,11 @@ int main2(int argc, char *argv[])
 				std::condition_variable cv_detected, cv_pre_tracked;
 				std::chrono::steady_clock::time_point steady_start, steady_end;
 				cv::VideoCapture cap(filename); cap >> cur_frame;
-				int const video_fps = cap.get(CV_CAP_PROP_FPS);
+				int const video_fps = cap.get(cv::CAP_PROP_FPS);
 				cv::Size const frame_size = cur_frame.size();
 				cv::VideoWriter output_video;
 				if (save_output_videofile)
-					output_video.open(out_videofile, CV_FOURCC('D', 'I', 'V', 'X'), std::max(35, video_fps), frame_size, true);
+					output_video.open(out_videofile, cv::VideoWriter::fourcc('D', 'I', 'V', 'X'), std::max(35, video_fps), frame_size, true);
 
 				while (!cur_frame.empty()) 
 				{
